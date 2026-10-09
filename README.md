@@ -85,28 +85,8 @@ About 2.9 s of every run is a physical coverage hole that no strategy can avoid.
 
 **The story so far:** the predictive controller with the Kalman forecast matches MPTCP redundant on poor-quality seconds (5.3) and comes within 0.1 s on interruption, while sending 0.2% duplicate traffic instead of 87% and using 60% of the energy. It still switches more often (about 12 handovers vs 8) and freezes more video than redundant. Those gaps are the next things to work on.
 
-## 5. Where your own idea goes
 
-Everything you should change is in `emu/strategies.py → Predictive`, in three hooks:
-
-1. **`predict()`** — how you forecast link quality. Done: Kalman filter (section 9). More ideas:
-   - Use speed and position with a coverage map learned from previous trips on the same road.
-   - Predict LEO outages from their 15 s reconfiguration period.
-2. **`link_score()`** — what "good" means. Ideas:
-   - Per-app scoring: video cares about bandwidth, voice about delay and loss.
-   - Cost of satellite data.
-   - Mission-critical priority, e.g. an emergency responder vs a passenger.
-3. **`is_risky()`** — when to duplicate packets. Ideas:
-   - Duplicate video key-frames only.
-   - Duplicate around predicted Wi-Fi AP roams.
-   - Adapt video bitrate instead of duplicating.
-
-Other directions:
-
-- **New scenarios.** Copy the YAML and try an ambulance at 120 km/h, a drone, or someone walking back and forth at the edge of Wi-Fi.
-- **Replace assumed numbers with measurements.** A laptop with Wi-Fi plus a phone hotspot, running `ping`/`iperf3`, is enough. The brief says this is welcome.
-
-## 6. Interactive demo page (for the video and the NSTI stand)
+## 5. Interactive demo page (for the video and the NSTI stand)
 
 ```bash
 python run.py                  # 20-seed results for the comparison panel (skip if already run)
@@ -122,31 +102,14 @@ Open `demo/edge_demo.html` in any browser. It's one self-contained file and need
 - **Keep it in sync:** the page is built from the simulator's output. After you change a strategy, link profile or scenario, run `build_demo.py` again.
 - **Captions:** the trip captions come from `narration:` in the scenario YAML. Wi-Fi roams, the 5G dead zone and the canyon are detected automatically.
 
-## 7. Real emulation on Linux (optional, recommended for the video)
+## 6. Honest limitations 
 
-```bash
-sudo ./linux_testbed/setup.sh                    # 2 namespaces, 5 virtual links, MPTCP endpoints
-sudo python3 linux_testbed/replay_trace.py results/latest/timeline_bbm.csv   # replays the trip with tc netem
-# in other terminals:
-sudo ip netns exec srv iperf3 -s
-sudo ip netns exec cli mptcpize run iperf3 -c 10.0.2.2 -t 200 -i 1
-sudo ./linux_testbed/teardown.sh
-```
-
-Verified here:
-- Namespaces, per-link routing tables, MPTCP endpoints, and an MPTCP connection across namespaces work.
-- The generated `tc netem` commands are correct in `--dry-run`.
-
-Not verified here: the netem step itself, because this build machine's kernel has no `sch_netem`. Run `sudo modprobe sch_netem` on your Linux machine first.
-
-## 8. Honest limitations (put these in your deck; reviewers reward it)
-
-- Link parameters are published ballparks, not measurements. They are all in one YAML file so you can cite or replace them.
+- Link parameters are published ballparks, not measurements. 
 - The route is 1-D, and 5G always uses the best cell. Inter-cell 5G handovers aren't modelled, but Wi-Fi AP roaming is.
 - Quality is measurable for every link, even when an interface is off. Real devices must scan for Wi-Fi or power a satellite terminal to measure it.
 - The "reconnect = 3 RTT" and "migration = free" assumptions are simplifications of TCP+TLS and QUIC/MPTCP.
 
-## 9. AI prediction hook: Kalman filter
+## 7. AI prediction hook: Kalman filter
 
 The `Predictive` strategy uses a constant-velocity Kalman filter in `emu/strategies.py → Predictive.predict()` instead of the original least-squares linear trend. The filter tracks:
 
@@ -172,20 +135,7 @@ python run.py --seeds 20 --strategies predictive_linear predictive --out results
 
 The Kalman forecast gives a small but consistent gain for voice: less interruption in every one of the 20 runs, and about 15% fewer seconds of poor call quality. It pays for that with about one extra handover per trip and 10% more radio energy, because it reacts earlier and powers the satellite on more often. Video stall time doesn't change significantly. The 3-run development results that first suggested the gain are kept in `results/teammate/paired3/`. `results/teammate/kalman3/` came from an earlier version of the filter and doesn't match the current code.
 
-Notes from the merge:
 
-- **NumPy 2.x fix.** `float(H @ x)` converts a 1-element array to a number. NumPy 1.x only warns about this; NumPy 2.4, which a fresh install gives you, raises an error. The filter now indexes the element explicitly (`(H @ x)[0]`), which gives identical results.
-- **Initial state.** The filter starts from the newest sample and then replays the window from the oldest one. A version that starts from the oldest sample gives the same results within noise over 20 runs (interruption difference −0.004 s), because 30 samples are enough to wash out the start. Expect this question in Q&A.
-- **Run time.** The filter is re-run over the 3 s window on every 100 ms tick, so a Kalman run takes about 4× longer than a linear one (about 25 s vs 6 s here). Running it recursively (one update per tick) would be faster, but the results would differ slightly from those above.
-
-
-## 10. Demo video
-
-```bash
-pip install imageio-ffmpeg
-python demo/build_demo.py          # the video is recorded from this page
-python video/make_video.py         # -> video/unbroken_demo.mp4 (1280x720, 1:55) and video/narration.md
-```
 
 The video is built from the current results, so rerun it after any change to the strategies. It has six parts: title, problem, approach, a replay of the trip with captions, results over 20 runs, and next steps. The headline numbers are read from `results/latest/summary.csv`.
 
