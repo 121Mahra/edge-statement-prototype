@@ -1,0 +1,503 @@
+<title>Seamless Handover Testbed</title>
+<meta name="description" content="Replay of a simulated trip across wired, Wi-Fi, 5G and satellite networks, comparing four handover strategies.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a drive-test log. Route strip on top, live state in two columns,
+   one shared time axis for every signal and every strategy, results last.
+   Single light theme on purpose: built for a bright exhibition hall. */
+:root {
+  color-scheme: light;
+  --page: #eef1f4;
+  --surface: #ffffff;
+  --ink: #12161c;
+  --ink-2: #4b5562;
+  --muted: #7d8794;
+  --rule: #dde2e8;
+  --road: #cfd5dc;
+  --lane: #f3f5f8;
+  /* link identity (validated categorical slots; wired = neutral ink) */
+  --l-wired: #52514e;
+  --l-wifi: #2a78d6;
+  --l-5g: #1baf7a;
+  --l-leo: #eb6834;
+  --l-geo: #4a3aa7;
+  /* status (reserved: always shown with an icon and a word) */
+  --good: #0ca30c;
+  --warn: #fab219;
+  --serious: #ec835a;
+  --crit: #d03b3b;
+  --font-display: "Barlow Semi Condensed", "Barlow", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 40px; display: grid; gap: 16px; }
+h1, h2 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(24px, 3vw, 32px); font-weight: 700; letter-spacing: 0.01em; line-height: 1.1; }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-2); }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.hint { color: var(--muted); font-size: 13px; }
+
+/* header */
+header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.sub { color: var(--ink-2); margin-top: 4px; }
+.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+button { font: 500 14px var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--ink-2); }
+button:focus-visible, .lane-hit:focus-visible, .srow:focus-visible { outline: 2px solid var(--l-wifi); outline-offset: 2px; }
+button.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); min-width: 92px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 7px 10px; font-family: var(--font-data); font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+/* route + caption */
+.caption { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.clock { font-family: var(--font-data); font-size: 15px; color: var(--ink-2); white-space: nowrap; }
+.clock b { color: var(--ink); font-weight: 500; font-size: 22px; }
+.story { font-family: var(--font-display); font-size: clamp(18px, 2.2vw, 22px); font-weight: 500; flex: 1 1 320px; min-width: 0; }
+.scroll { overflow-x: auto; }
+svg text { font-family: var(--font-body); }
+
+/* live columns */
+.cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; }
+@media (max-width: 900px) { .cols, .bottom { grid-template-columns: minmax(0, 1fr) !important; } }
+.netrow { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--rule); }
+.netrow:first-of-type { border-top: 0; }
+.netname { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.bar { position: relative; height: 10px; background: var(--lane); border-radius: 5px; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
+.bar b { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--ink-2); opacity: 0.5; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); white-space: nowrap; }
+.chip.on { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+
+.srow { display: grid; grid-template-columns: minmax(0, 1.6fr) 130px 128px 82px 64px; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+.srow + .srow { margin-top: 2px; }
+.srow:hover { background: var(--lane); }
+.srow.focus { border-color: var(--ink); background: var(--surface); }
+.shead { display: grid; grid-template-columns: minmax(0, 1.6fr) 130px 128px 82px 64px; gap: 10px; padding: 0 10px 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.sname { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sblurb { color: var(--muted); font-size: 13px; line-height: 1.3; }
+.badge { font: 600 11px var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; background: var(--ink); color: var(--surface); padding: 1px 6px; border-radius: 4px; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.status svg { flex: none; }
+.big { font-family: var(--font-data); font-size: 17px; text-align: right; }
+.big small { font-size: 12px; color: var(--muted); }
+@media (max-width: 640px) {
+  .shead { display: none; }
+  .srow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n n" "c c" "st st" "l w"; row-gap: 6px; }
+  .srow > :nth-child(1) { grid-area: n; } .srow > :nth-child(2) { grid-area: c; } .srow > :nth-child(3) { grid-area: st; }
+  .srow > :nth-child(4) { grid-area: l; } .srow > :nth-child(5) { grid-area: w; }
+  .srow .big { text-align: left; font-size: 15px; white-space: nowrap; }
+  .srow .lost::before { content: "Audio lost "; font: 13px var(--font-body); color: var(--muted); }
+  .srow .nsw::before { content: "Switches "; font: 13px var(--font-body); color: var(--muted); }
+  .netrow { grid-template-columns: 96px minmax(0, 1fr); }
+  .netrow .chip { grid-column: 1 / -1; justify-self: start; }
+}
+
+/* timeline */
+.tl { min-width: 760px; display: block; touch-action: none; cursor: ew-resize; user-select: none; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* bottom */
+.bottom { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 16px; }
+.sgrid { display: grid; grid-template-columns: 150px repeat(3, minmax(120px, 1fr)); column-gap: 18px; row-gap: 10px; align-items: center; min-width: 560px; }
+.shd b { display: block; font: 600 15px var(--font-display); }
+.shd span { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.3; }
+.shd { align-self: start; padding-bottom: 4px; }
+.slab { font-size: 14px; }
+.slab.ours { font-weight: 600; }
+.scell { display: grid; grid-template-columns: minmax(0, 1fr) 54px; gap: 8px; align-items: center; }
+.scell .num { font-size: 13px; text-align: right; }
+.strack { position: relative; height: 16px; }
+.strack i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--road); border-radius: 3px; }
+.strack i.ours { background: var(--ink); }
+.strack u { position: absolute; top: 7px; height: 2px; background: var(--ink-2); opacity: 0.7; }
+.note { margin: 12px 0 0; color: var(--ink-2); font-size: 13px; max-width: 70ch; }
+.log { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.log li { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; padding: 7px 0; border-top: 1px solid var(--rule); font-size: 14px; }
+.log li:first-child { border-top: 0; }
+.log .t { font-family: var(--font-data); color: var(--muted); font-size: 13px; white-space: nowrap; }
+.log .why { color: var(--muted); font-size: 13px; }
+.empty { color: var(--muted); font-size: 14px; padding: 8px 0; }
+footer { color: var(--muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Seamless Handover Testbed</h1>
+      <div class="sub" id="sub">Office to remote site, Ras Al Khaimah</div>
+    </div>
+    <div class="controls">
+      <button id="restart" type="button" title="Back to the start (Home)">Restart</button>
+      <button id="play" class="primary" type="button" title="Play or pause (Space)">Play</button>
+      <div class="seg" role="group" aria-label="Playback speed" id="speeds"></div>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="h-route">
+    <div class="panel-head"><h2 id="h-route">The trip</h2><span class="hint">Route not to scale; each section gets room for its detail</span></div>
+    <div class="scroll"><svg id="route" viewBox="0 0 1000 196" style="min-width:720px;display:block" role="img" aria-label="Route from the office through the city and mountain road to the site, with Wi-Fi access points, 5G cells and areas with no 5G or no sky view"></svg></div>
+    <div class="caption">
+      <div class="clock"><b id="clock" class="num">0.0</b> s &nbsp;·&nbsp; <span id="kmh" class="num">0</span> km/h</div>
+      <div class="story" id="story" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <div class="cols">
+    <section class="panel" aria-labelledby="h-net">
+      <div class="panel-head"><h2 id="h-net">Networks right now</h2><span class="hint" id="netfor"></span></div>
+      <div id="nets"></div>
+    </section>
+    <section class="panel" aria-labelledby="h-str">
+      <div class="panel-head"><h2 id="h-str">How each strategy is doing</h2><span class="hint">Select a row to follow it</span></div>
+      <div class="shead"><span>Strategy</span><span>Using</span><span>Call right now</span><span style="text-align:right">Audio lost</span><span style="text-align:right">Switches</span></div>
+      <div id="strats"></div>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="h-tl">
+    <div class="panel-head">
+      <h2 id="h-tl">Signal and link in use, whole trip</h2>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="scroll"><svg id="tl" class="tl" role="img" aria-label="Timeline of each network's signal quality and of the link each strategy used. Drag to move through the trip."></svg></div>
+    <p class="note">Top rows: signal quality of each network, 0 to 100, with a mark where it becomes usable. Strategy rows: the link carrying traffic. Under each, red marks where the call lost audio and amber where it degraded. Drag anywhere on the chart to move through the trip.</p>
+  </section>
+
+  <div class="bottom">
+    <section class="panel" aria-labelledby="h-sum" id="sumpanel">
+      <div class="panel-head"><h2 id="h-sum">Across <span id="runs"></span> runs of the same trip</h2><span class="hint">Mean, with 95% confidence interval</span></div>
+      <div class="scroll"><div id="mult"></div></div>
+      <p class="note" id="sumnote"></p>
+    </section>
+    <section class="panel" aria-labelledby="h-log">
+      <div class="panel-head"><h2 id="h-log">Decisions so far</h2><span class="hint" id="logfor"></span></div>
+      <ol class="log" id="log"></ol>
+    </section>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>const DATA=/*__DATA__*/null;</script>
+<script>
+(() => {
+  const D = DATA;
+  const N = D.pos.length, STEP = D.step, DUR = D.duration;
+  const LINK_COLOR = { wired: 'var(--l-wired)', wifi: 'var(--l-wifi)', cellular_5g: 'var(--l-5g)', sat_leo: 'var(--l-leo)', sat_geo: 'var(--l-geo)' };
+  const SHORT = { wired: 'Wired', wifi: 'Wi-Fi', cellular_5g: '5G', sat_leo: 'LEO sat', sat_geo: 'GEO sat' };
+  const color = i => i < 0 ? 'var(--muted)' : LINK_COLOR[D.links[i].id];
+  const REASON = {
+    'priority/default route': 'Default route moved to the highest-priority link',
+    'primary link lost': 'The link in use went down; nothing is carrying the call',
+    'current lost': 'Picked a link after the previous one went down',
+    'below threshold': 'Signal stayed below the threshold, so it switched',
+    'higher priority is good': 'A preferred link became good again',
+    'better predicted QoE': 'Predicted better call quality on this link',
+    'predicted loss': 'Predicted the current link was about to fail',
+  };
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const $ = id => document.getElementById(id);
+  const fmt1 = v => v.toFixed(1);
+
+  // ---------- derived data
+  const S = D.strategies;
+  S.forEach(s => {
+    s.cumLost = new Float32Array(N); let acc = 0;
+    for (let i = 0; i < N; i++) { acc += (1 - (s.voice ? s.voice[i] : 100) / 100) * STEP; s.cumLost[i] = acc; }
+    s.switchTimes = s.handovers.filter(h => h[1] >= 0).map(h => h[0]);
+  });
+  let focus = (S.find(s => s.ours) || S[0]).id;
+  let t = 0, playing = false, speed = 5, last = null;
+  const idx = () => Math.min(N - 1, Math.max(0, Math.round(t / STEP)));
+
+  $('sub').textContent = `Office to remote site, Ras Al Khaimah · ${DUR} s trip · simulated, seed ${D.seed}`;
+  $('foot').textContent = `Every number on this page comes from running the simulator (emu/) on scenario "${D.scenario}". Link parameters are published ballpark values, not measurements.`;
+
+  // ---------- route strip
+  const route = $('route');
+  const phases = D.geometry.phases.length ? D.geometry.phases : [[0, D.geometry.length, 'Route']];
+  const weights = { Office: 0.24, City: 0.2, 'Mountain road': 0.42, Site: 0.14 };
+  const R0 = 92, R1 = 984;
+  const bounds = [R0]; let accW = 0; const wsum = phases.reduce((a, p) => a + (weights[p[2]] || 0.25), 0);
+  phases.forEach(p => { accW += (weights[p[2]] || 0.25) / wsum; bounds.push(R0 + accW * (R1 - R0)); });
+  const rx = s => { for (let k = 0; k < phases.length; k++) { const [a, b] = phases[k]; if (s <= b || k === phases.length - 1) { const f = Math.max(0, Math.min(1, (s - a) / (b - a))); return bounds[k] + f * (bounds[k + 1] - bounds[k]); } } return R1; };
+  const defs = el('defs', {}, route);
+  const pat = (id, stroke) => { const p = el('pattern', { id, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs); el('line', { x1: 0, y1: 0, x2: 0, y2: 6, stroke, 'stroke-width': 2 }, p); };
+  pat('hatch-5g', 'var(--l-5g)'); pat('hatch-sky', 'var(--l-leo)'); pat('hatch-none', 'var(--rule)');
+  const rowY = { wifi: 56, road: 102, g5: 146, sky: 178 };
+  const lbl = (txt, y) => { const e = el('text', { x: 0, y: y + 4, 'font-size': 12.5, fill: 'var(--ink-2)', 'font-weight': 500 }, route); e.textContent = txt; };
+  lbl('Wi-Fi', rowY.wifi); lbl('Road', rowY.road); lbl('5G', rowY.g5); lbl('Sky view', rowY.sky);
+  phases.forEach((p, k) => {
+    const x0 = bounds[k], x1 = bounds[k + 1];
+    if (k > 0) el('line', { x1: x0, x2: x0, y1: 26, y2: 192, stroke: 'var(--rule)', 'stroke-dasharray': '3 4' }, route);
+    const tx = el('text', { x: (x0 + x1) / 2, y: 18, 'text-anchor': 'middle', 'font-size': 12, 'letter-spacing': '0.08em', fill: 'var(--ink-2)', 'font-weight': 600, 'font-family': 'var(--font-display)' }, route);
+    tx.textContent = p[2].toUpperCase();
+  });
+  // 5G dead zones and sky-blocked areas
+  D.geometry.deadZones.forEach(([a, b]) => { const x0 = rx(a), x1 = rx(Math.min(b, D.geometry.length)); el('rect', { x: x0, y: rowY.g5 - 9, width: x1 - x0, height: 18, fill: 'url(#hatch-5g)', opacity: 0.55, rx: 3 }, route); const tx = el('text', { x: (x0 + x1) / 2, y: rowY.g5 + 4, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--ink)', 'font-weight': 600 }, route); tx.textContent = 'No 5G'; });
+  D.geometry.skyBlocked.forEach(([a, b]) => { const x0 = rx(a), x1 = rx(Math.min(b, D.geometry.length)); el('rect', { x: x0, y: rowY.sky - 7, width: Math.max(4, x1 - x0), height: 14, fill: 'url(#hatch-sky)', opacity: 0.5, rx: 3 }, route); });
+  const skyTxt = el('text', { x: (rx(1520) + rx(1600)) / 2, y: rowY.sky + 4, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink)', 'font-weight': 600 }, route); skyTxt.textContent = 'canyon';
+  // road
+  el('line', { x1: R0, x2: R1, y1: rowY.road, y2: rowY.road, stroke: 'var(--road)', 'stroke-width': 12, 'stroke-linecap': 'round' }, route);
+  el('line', { x1: R0 + 6, x2: R1 - 6, y1: rowY.road, y2: rowY.road, stroke: 'var(--surface)', 'stroke-width': 1.5, 'stroke-dasharray': '8 8' }, route);
+  // access points
+  D.geometry.aps.forEach((s, k) => {
+    const g = el('g', { transform: `translate(${rx(s)},${rowY.wifi})` }, route);
+    el('circle', { r: 3, fill: 'var(--l-wifi)' }, g);
+    [7, 12].forEach(r => el('path', { d: `M${-r * 0.75} ${-r * 0.6} A${r} ${r} 0 0 1 ${r * 0.75} ${-r * 0.6}`, fill: 'none', stroke: 'var(--l-wifi)', 'stroke-width': 1.6 }, g));
+    const tx = el('text', { y: 18, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--ink-2)', 'font-family': 'var(--font-data)' }, g); tx.textContent = 'AP' + (k + 1);
+  });
+  // 5G cells (a cell past the end of the route is drawn at the edge)
+  D.geometry.cells.forEach(s => {
+    const x = Math.min(rx(s), R1 - 2);
+    const g = el('g', { transform: `translate(${x},${rowY.g5})` }, route);
+    el('path', { d: 'M0 -11 L-6 9 M0 -11 L6 9 M-4 2 H4', stroke: 'var(--l-5g)', 'stroke-width': 1.8, fill: 'none', 'stroke-linecap': 'round' }, g);
+    el('circle', { cy: -12, r: 2.6, fill: 'var(--l-5g)' }, g);
+  });
+  const car = el('g', {}, route);
+  el('circle', { r: 13, fill: 'var(--ink)', opacity: 0.12 }, car);
+  el('circle', { r: 8, fill: 'var(--ink)', stroke: 'var(--surface)', 'stroke-width': 2.5 }, car);
+  const carLine = el('line', { y1: 30, y2: 190, stroke: 'var(--ink)', 'stroke-width': 1, opacity: 0.35 }, route);
+
+  // ---------- networks panel
+  const nets = $('nets');
+  const netRows = D.links.map((l, k) => {
+    const row = document.createElement('div'); row.className = 'netrow';
+    row.innerHTML = `<div class="netname"><span class="sw" style="background:${color(k)}"></span>${l.name}</div>
+      <div class="bar" title="Signal quality"><i style="background:${color(k)}"></i><b style="left:${l.qMin * 100}%"></b></div>
+      <div><span class="chip"></span></div>`;
+    nets.appendChild(row);
+    return { bar: row.querySelector('.bar i'), chip: row.querySelector('.chip') };
+  });
+
+  // ---------- strategies panel
+  const ICON = {
+    good: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="var(--good)"/><path d="M3.8 7.2l2.1 2.1 4.3-4.6" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    warn: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1 L13.4 12.6 H0.6 Z" fill="var(--warn)"/><path d="M7 5v3.6" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10.6" r="0.9" fill="var(--ink)"/></svg>',
+    serious: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1" y="1" width="12" height="12" rx="2" fill="var(--serious)"/><path d="M4 7h6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    crit: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="var(--crit)"/><path d="M4.5 4.5l5 5M9.5 4.5l-5 5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  };
+  const callStatus = (s, i) => {
+    const v = s.voice ? s.voice[i] : 100;
+    if (v < 30) return ['crit', 'No audio'];
+    const sec = Math.min(s.mos.length - 1, Math.floor(i * STEP));
+    const m = s.mos[sec];
+    if (v < 90 || m < 3.1) return ['serious', `Poor · MOS ${m.toFixed(1)}`];
+    if (m < 4.0) return ['warn', `Fair · MOS ${m.toFixed(1)}`];
+    return ['good', `Good · MOS ${m.toFixed(1)}`];
+  };
+  const strats = $('strats');
+  const sRows = S.map(s => {
+    const row = document.createElement('div'); row.className = 'srow'; row.tabIndex = 0; row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `Follow ${s.name}`);
+    row.innerHTML = `<div style="min-width:0"><div class="sname">${s.name}${s.ours ? '<span class="badge">Ours</span>' : ''}</div><div class="sblurb">${s.blurb}</div></div>
+      <div><span class="chip on"><span class="dot"></span><span class="lk"></span></span></div>
+      <div class="status"></div>
+      <div class="big lost"></div>
+      <div class="big nsw"></div>`;
+    const pick = () => { focus = s.id; render(true); };
+    row.addEventListener('click', pick);
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); pick(); } });
+    strats.appendChild(row);
+    return { s, row, dot: row.querySelector('.dot'), lk: row.querySelector('.lk'), status: row.querySelector('.status'), lost: row.querySelector('.lost'), nsw: row.querySelector('.nsw') };
+  });
+
+  // ---------- timeline
+  const tl = $('tl');
+  const L = 150, Rr = 988, W = Rr - L;
+  const tx = v => L + (v / DUR) * W;
+  const sigH = 26, laneH = 22, voiceH = 6;
+  const yAxis = 30, ySig0 = 44, yLane0 = ySig0 + D.links.length * (sigH + 6) + 18;
+  const H = yLane0 + S.length * (laneH + voiceH + 16) + 6;
+  tl.setAttribute('viewBox', `0 0 1000 ${H}`);
+  const tdefs = el('defs', {}, tl);
+  { const p = el('pattern', { id: 'hatch-gap', width: 5, height: 5, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, tdefs); el('line', { x1: 0, y1: 0, x2: 0, y2: 5, stroke: 'var(--crit)', 'stroke-width': 1.4, opacity: 0.55 }, p); }
+  // axis
+  for (let v = 0; v <= DUR; v += 20) {
+    el('line', { x1: tx(v), x2: tx(v), y1: yAxis + 4, y2: H - 4, stroke: 'var(--rule)', 'stroke-width': 1 }, tl);
+    const e = el('text', { x: tx(v), y: yAxis - 6, 'text-anchor': v >= DUR ? 'end' : 'middle', 'font-size': 11.5, fill: 'var(--muted)', 'font-family': 'var(--font-data)' }, tl); e.textContent = v + ' s';
+  }
+  // event ticks on the axis
+  D.events.forEach(([et, txt]) => { const g = el('path', { d: `M${tx(et)} ${yAxis + 4} l4 -5 l-4 -5 l-4 5 z`, fill: 'var(--ink-2)', opacity: 0.55 }, tl); const ti = el('title', {}, g); ti.textContent = `${fmt1(et)} s: ${txt}`; });
+  // signal rows
+  const down = 5;
+  D.links.forEach((l, k) => {
+    const y0 = ySig0 + k * (sigH + 6), yb = y0 + sigH;
+    const name = el('text', { x: 0, y: y0 + sigH / 2 + 4, 'font-size': 12.5, fill: 'var(--ink-2)' }, tl); name.textContent = l.name;
+    el('rect', { x: L, y: y0, width: W, height: sigH, fill: 'var(--lane)', rx: 3 }, tl);
+    const q = D.q[l.id]; let d = `M${L} ${yb}`;
+    for (let i = 0; i < N; i += down) d += ` L${tx(i * STEP).toFixed(1)} ${(yb - q[i] / 100 * sigH).toFixed(1)}`;
+    d += ` L${Rr} ${yb} Z`;
+    el('path', { d, fill: color(k), 'fill-opacity': 0.22, stroke: color(k), 'stroke-width': 1.2, 'stroke-linejoin': 'round' }, tl);
+    el('line', { x1: L, x2: Rr, y1: yb - l.qMin * sigH, y2: yb - l.qMin * sigH, stroke: 'var(--ink-2)', 'stroke-width': 0.8, 'stroke-dasharray': '2 3', opacity: 0.6 }, tl);
+  });
+  const sep = el('text', { x: 0, y: yLane0 - 8, 'font-size': 11, fill: 'var(--muted)', 'letter-spacing': '0.08em', 'font-weight': 600 }, tl); sep.textContent = 'LINK IN USE';
+  // strategy lanes
+  const laneLabels = [];
+  S.forEach((s, j) => {
+    const y0 = yLane0 + j * (laneH + voiceH + 16);
+    const name = el('text', { x: 0, y: y0 + laneH / 2 + 4, 'font-size': 12.5, fill: 'var(--ink)', 'font-weight': s.ours ? 600 : 400 }, tl); name.textContent = s.name;
+    laneLabels.push(name);
+    el('rect', { x: L, y: y0, width: W, height: laneH, fill: 'url(#hatch-gap)', rx: 3 }, tl);
+    let a = 0;
+    for (let i = 1; i <= N; i++) {
+      if (i === N || s.primary[i] !== s.primary[a]) {
+        if (s.primary[a] >= 0) {
+          const x0 = tx(a * STEP), x1 = tx(i * STEP);
+          el('rect', { x: x0, y: y0, width: Math.max(0.8, x1 - x0), height: laneH, fill: color(s.primary[a]) }, tl);
+          if (x1 - x0 > 46) { const lt = el('text', { x: x0 + 6, y: y0 + laneH / 2 + 4, 'font-size': 11.5, fill: '#fff', 'font-weight': 600 }, tl); lt.textContent = SHORT[D.links[s.primary[a]].id]; }
+        }
+        a = i;
+      }
+    }
+    // audio quality strip
+    const yv = y0 + laneH + 3;
+    el('rect', { x: L, y: yv, width: W, height: voiceH, fill: 'var(--lane)', rx: 2 }, tl);
+    if (s.voice) {
+      let b = 0; const cls = v => v < 50 ? 2 : v < 95 ? 1 : 0;
+      for (let i = 1; i <= N; i++) {
+        if (i === N || cls(s.voice[i]) !== cls(s.voice[b])) {
+          const c = cls(s.voice[b]);
+          if (c) el('rect', { x: tx(b * STEP), y: yv, width: Math.max(1.2, tx(i * STEP) - tx(b * STEP)), height: voiceH, fill: c === 2 ? 'var(--crit)' : 'var(--warn)' }, tl);
+          b = i;
+        }
+      }
+    }
+    s._y0 = y0;
+  });
+  const focusBox = el('rect', { x: L - 4, width: W + 8, height: laneH + voiceH + 7, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.5, rx: 5 }, tl);
+  const play = el('g', {}, tl);
+  el('line', { y1: yAxis, y2: H - 2, stroke: 'var(--ink)', 'stroke-width': 1.5 }, play);
+  el('path', { d: `M-5 ${yAxis - 2} h10 l-5 6 z`, fill: 'var(--ink)' }, play);
+  // legend
+  $('legend').innerHTML = D.links.map((l, k) => `<span><span class="sw" style="background:${color(k)}"></span>${l.name}</span>`).join('') +
+    '<span><span class="sw" style="background-image:repeating-linear-gradient(45deg,var(--crit) 0 1.5px,transparent 1.5px 4px)"></span>No link</span>';
+  // scrubbing
+  const seekFromEvent = e => { const r = tl.getBoundingClientRect(); const vx = (e.clientX - r.left) / r.width * 1000; t = Math.max(0, Math.min(DUR, (vx - L) / W * DUR)); render(); };
+  let dragging = false;
+  tl.addEventListener('pointerdown', e => { dragging = true; tl.setPointerCapture(e.pointerId); seekFromEvent(e); });
+  tl.addEventListener('pointermove', e => { if (dragging) seekFromEvent(e); });
+  tl.addEventListener('pointerup', () => { dragging = false; });
+
+  // ---------- 20-run summary
+  if (D.summary) {
+    $('runs').textContent = D.summary.runs;
+    const M = [
+      ['voip_interruption_s', 'Audio interruption', 'Seconds of call with no audio, per trip', v => v.toFixed(1) + ' s'],
+      ['overhead_pct', 'Duplicate traffic', 'Extra data sent as copies', v => v.toFixed(v < 1 ? 1 : 0) + '%'],
+      ['energy_kj', 'Radio energy', 'Energy used by the network interfaces', v => v.toFixed(1) + ' kJ'],
+    ];
+    const mult = $('mult');
+    let html = '<div class="sgrid"><div></div>' + M.map(([, title, desc]) => `<div class="shd"><b>${title}</b><span>${desc}</span></div>`).join('');
+    const maxOf = key => Math.max(...S.map(s => { const v = (D.summary.metrics[s.id] || {})[key] || [0, 0]; return v[0] + v[1]; })) * 1.05 || 1;
+    const maxes = M.map(([key]) => maxOf(key));
+    S.forEach(s => {
+      html += `<div class="slab${s.ours ? ' ours' : ''}">${s.name}</div>`;
+      M.forEach(([key, , , f], k) => {
+        const [m, ci] = (D.summary.metrics[s.id] || {})[key] || [0, 0];
+        const w = Math.max(0.6, m / maxes[k] * 100), lo = (m - ci) / maxes[k] * 100, hi = (m + ci) / maxes[k] * 100;
+        html += `<div class="scell"><div class="strack"><i class="${s.ours ? 'ours' : ''}" style="width:${w}%"></i>${ci > 0 ? `<u style="left:${lo}%;width:${hi - lo}%"></u>` : ''}</div><span class="num">${f(m)}</span></div>`;
+      });
+    });
+    mult.innerHTML = html + '</div>';
+    $('sumnote').textContent = `In ${D.noCoverageS} s of this trip no network is usable at all, so every strategy loses at least that much. MPTCP redundant buys its small lead by sending most of the traffic twice and keeping the satellite terminal powered.`;
+  } else { $('sumpanel').hidden = true; }
+
+  // ---------- speed buttons
+  const speeds = [1, 5, 10, 20];
+  const sp = $('speeds');
+  speeds.forEach(v => { const b = document.createElement('button'); b.type = 'button'; b.textContent = v + '×'; b.setAttribute('aria-pressed', v === speed); b.addEventListener('click', () => { speed = v; [...sp.children].forEach(c => c.setAttribute('aria-pressed', c === b)); }); sp.appendChild(b); });
+
+  // ---------- render
+  const storyAt = time => { let s = D.events[0][1]; for (const [et, txt] of D.events) { if (et <= time + 1e-6) s = txt; else break; } return s; };
+  let lastStory = '', lastLogKey = '';
+  function render(force) {
+    const i = idx();
+    $('clock').textContent = fmt1(t);
+    $('kmh').textContent = D.speed[i];
+    const st = storyAt(t); if (st !== lastStory) { $('story').textContent = st; lastStory = st; }
+    const cx = rx(D.pos[i]);
+    car.setAttribute('transform', `translate(${cx},${rowY.road})`);
+    carLine.setAttribute('x1', cx); carLine.setAttribute('x2', cx);
+    play.setAttribute('transform', `translate(${tx(t)},0)`);
+
+    const fs = S.find(s => s.id === focus);
+    $('netfor').textContent = 'as seen by ' + fs.name.replace(' (ours)', '');
+    D.links.forEach((l, k) => {
+      const q = D.q[l.id][i], stt = fs.states[i][k], r = netRows[k];
+      r.bar.style.width = q + '%';
+      let txt, on = false;
+      if (fs.primary[i] === k) { txt = 'Carrying the call'; on = true; }
+      else if (stt === 'u') txt = 'Connected, standby';
+      else if (stt === 'a') txt = 'Connecting…';
+      else if (q / 100 >= l.qMin) txt = 'Off, signal present';
+      else txt = 'No usable signal';
+      r.chip.textContent = txt; r.chip.classList.toggle('on', on);
+    });
+
+    sRows.forEach(r => {
+      const s = r.s, p = s.primary[i];
+      r.row.classList.toggle('focus', s.id === focus);
+      r.dot.style.background = p >= 0 ? color(p) : 'var(--crit)';
+      r.lk.textContent = p >= 0 ? SHORT[D.links[p].id] : 'No link';
+      const [k, label] = callStatus(s, i);
+      r.status.innerHTML = ICON[k] + `<span>${label}</span>`;
+      r.lost.innerHTML = s.cumLost[i].toFixed(1) + '<small> s</small>';
+      let n = 0; for (const ht of s.switchTimes) { if (ht <= t + 1e-6) n++; else break; }
+      r.nsw.textContent = n;
+    });
+
+    focusBox.setAttribute('y', fs._y0 - 3.5);
+    laneLabels.forEach((lbl, j) => lbl.setAttribute('font-weight', S[j].id === focus ? 700 : (S[j].ours ? 600 : 400)));
+
+    const done = fs.handovers.filter(h => h[0] <= t + 1e-6);
+    const key = focus + ':' + done.length;
+    if (key !== lastLogKey || force) {
+      lastLogKey = key;
+      $('logfor').textContent = fs.name;
+      const log = $('log');
+      if (!done.length) log.innerHTML = '<li class="empty">No decisions yet. Press Play.</li>';
+      else log.innerHTML = done.slice().reverse().map(([ht, to, why]) => `<li><span class="t">${fmt1(ht)} s</span><span>${to >= 0 ? `<span class="sw" style="display:inline-block;margin-right:6px;background:${color(to)}"></span>Switched to <b>${D.links[to].name}</b>` : '<b>Lost the connection</b>'}<br><span class="why">${REASON[why] || why}</span></span></li>`).join('');
+    }
+  }
+
+  // ---------- playback
+  const playBtn = $('play');
+  const setPlaying = v => { playing = v; playBtn.textContent = v ? 'Pause' : (t >= DUR ? 'Replay' : 'Play'); if (v) { last = null; requestAnimationFrame(tick); } };
+  function tick(ts) {
+    if (!playing) return;
+    if (last !== null) t += (ts - last) / 1000 * speed;
+    last = ts;
+    if (t >= DUR) { t = DUR; render(); if (kiosk) { t = 0; } else { setPlaying(false); return; } }
+    render();
+    requestAnimationFrame(tick);
+  }
+  playBtn.addEventListener('click', () => { if (!playing && t >= DUR) t = 0; setPlaying(!playing); });
+  $('restart').addEventListener('click', () => { t = 0; render(); });
+  document.addEventListener('keydown', e => {
+    if (e.target.closest && e.target.closest('.srow')) return;
+    if (e.code === 'Space') { e.preventDefault(); playBtn.click(); }
+    else if (e.key === 'ArrowRight') { t = Math.min(DUR, t + 1); render(); }
+    else if (e.key === 'ArrowLeft') { t = Math.max(0, t - 1); render(); }
+    else if (e.key === 'Home') { t = 0; render(); }
+  });
+  // hook for scripted recording (video/make_video.py): seek and follow without the UI
+  window.edgeDemo = { seek: v => { t = Math.max(0, Math.min(DUR, v)); render(); }, follow: id => { focus = id; render(true); } };
+  const kiosk = location.hash === '#autoplay';
+  render(true);
+  if (kiosk && !matchMedia('(prefers-reduced-motion: reduce)').matches) setPlaying(true);
+})();
+</script>

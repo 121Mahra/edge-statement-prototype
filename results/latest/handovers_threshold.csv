@@ -1,0 +1,10 @@
+t,from,to,reason
+0.0,,wired,current lost
+20.000000000000327,wired,,primary link lost
+20.100000000000016,,wifi,current lost
+73.30000000000011,wifi,cellular_5g,below threshold
+126.79999999999707,cellular_5g,sat_leo,below threshold
+137.59000000001984,sat_leo,,primary link lost
+141.49999999999625,,sat_leo,current lost
+163.79999999999498,sat_leo,cellular_5g,higher priority is good
+175.29999999999433,cellular_5g,wifi,higher priority is good

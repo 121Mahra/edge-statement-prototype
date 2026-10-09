@@ -1,0 +1,108 @@
+# Link profiles — one entry per network technology.
+#
+# Every link has a "quality" q in [0, 1] that changes over time (computed from
+# the mobility scenario: distance to access point / cell, obstructions, ...).
+# q is turned into packet-level behaviour like this (see emu/links.py):
+#
+#   up          = q >= q_min
+#   one-way delay = base_delay_ms + (1 - q) * extra_delay_ms   (+ random jitter)
+#   loss rate   = loss_floor + loss_max * max(0, (q_good - q) / q_good)
+#   bandwidth   = bw_max_kbps * q
+#
+# attach_ms   : time to bring the interface up / associate / get an IP
+#               (Wi-Fi association + DHCP, 5G attach + PDU session, ...)
+# detach_ms   : how long the OS takes to declare the link lost (default 500 ms,
+#               e.g. Wi-Fi beacon loss). Packets are lost meanwhile.
+# power_w     : rough power draw while the interface is on (energy metric).
+#               Satellite terminals (dishes) draw tens of watts.
+# roam_gap_ms : (Wi-Fi only) outage while re-associating to another AP of the
+#               same network. ~250 ms without 802.11r, ~50 ms with 802.11r (FT).
+# The numbers below are typical published ballparks, NOT measurements.
+# Cite / justify them in your deck, or replace them with your own measurements.
+
+wifi:
+  power_w: 0.8
+  roam_gap_ms: 250
+  roam_hysteresis_db: 8
+  kind: ap            # quality comes from distance to the nearest access point
+  base_delay_ms: 3
+  extra_delay_ms: 25
+  jitter_ms: 2
+  loss_floor: 0.001
+  loss_max: 0.30
+  q_good: 0.35
+  q_min: 0.08
+  bw_max_kbps: 150000
+  attach_ms: 800      # 802.11 auth/assoc + 4-way handshake + DHCP
+  # radio model (log-distance path loss)
+  tx_dbm: -30         # RSSI at 1 m
+  path_loss_exp: 3.0
+  rssi_best: -45
+  rssi_worst: -85
+  shadowing_db: 4
+
+cellular_5g:
+  power_w: 1.5
+  kind: cell
+  base_delay_ms: 12
+  extra_delay_ms: 60
+  jitter_ms: 4
+  loss_floor: 0.001
+  loss_max: 0.25
+  q_good: 0.30
+  q_min: 0.06
+  bw_max_kbps: 300000
+  attach_ms: 400      # already registered; bring up PDU session / bearer
+  tx_dbm: -40         # RSRP-like value at 1 m (scaled)
+  path_loss_exp: 2.2
+  rssi_best: -70
+  rssi_worst: -120
+  shadowing_db: 5
+
+sat_leo:
+  power_w: 50
+  kind: sat           # quality mostly constant, drops during obstructions
+  base_delay_ms: 20
+  extra_delay_ms: 40
+  jitter_ms: 6
+  loss_floor: 0.005
+  loss_max: 0.30
+  q_good: 0.40
+  q_min: 0.10
+  bw_max_kbps: 100000
+  attach_ms: 1500
+  nominal_q: 0.85
+  reconfig_period_s: 15   # LEO constellations re-assign satellites periodically
+  reconfig_gap_ms: 120    # short outage/spike at every reconfiguration
+  shadowing_db: 2
+
+sat_geo:
+  power_w: 30
+  kind: sat
+  base_delay_ms: 290      # ~36,000 km each way
+  extra_delay_ms: 60
+  jitter_ms: 8
+  loss_floor: 0.005
+  loss_max: 0.20
+  q_good: 0.40
+  q_min: 0.10
+  bw_max_kbps: 10000
+  attach_ms: 2500
+  nominal_q: 0.80
+  reconfig_period_s: 0    # no periodic reconfiguration
+  reconfig_gap_ms: 0
+  shadowing_db: 1
+
+wired:
+  power_w: 0.1
+  detach_ms: 0          # cable pulled -> carrier loss is detected instantly
+  kind: dock          # only up while the device is docked
+  base_delay_ms: 1
+  extra_delay_ms: 0
+  jitter_ms: 0.2
+  loss_floor: 0.0
+  loss_max: 0.0
+  q_good: 0.5
+  q_min: 0.5
+  bw_max_kbps: 1000000
+  attach_ms: 300

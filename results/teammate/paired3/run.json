@@ -1,0 +1,10 @@
+{
+  "scenario": "rak_office_to_site",
+  "strategies": [
+    "predictive_linear",
+    "predictive"
+  ],
+  "seeds": 3,
+  "out": "results/paired3",
+  "workers": 3
+}

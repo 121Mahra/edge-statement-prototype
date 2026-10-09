@@ -1,0 +1,9 @@
+{
+  "scenario": "rak_office_to_site",
+  "strategies": [
+    "predictive"
+  ],
+  "seeds": 3,
+  "out": "results/kalman3",
+  "workers": 3
+}

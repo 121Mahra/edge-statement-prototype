@@ -1,0 +1,15 @@
+t,from,to,reason
+0.0,,wired,current lost
+20.000000000000327,wired,,primary link lost
+20.100000000000016,,wifi,current lost
+36.900000000000254,wifi,cellular_5g,better predicted QoE
+39.9000000000003,cellular_5g,wifi,better predicted QoE
+58.000000000000554,wifi,cellular_5g,better predicted QoE
+61.0000000000006,cellular_5g,wifi,better predicted QoE
+73.00000000000013,wifi,cellular_5g,better predicted QoE
+126.1999999999971,cellular_5g,sat_leo,predicted loss
+137.59000000001984,sat_leo,,primary link lost
+141.49999999999625,,sat_leo,current lost
+154.39999999999552,sat_leo,cellular_5g,better predicted QoE
+160.19999999999519,cellular_5g,sat_leo,better predicted QoE
+163.299999999995,sat_leo,cellular_5g,better predicted QoE

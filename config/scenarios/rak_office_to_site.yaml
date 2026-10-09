@@ -1,0 +1,86 @@
+# Scenario: "Office -> Jebel Jais site" (RAK)
+#
+# A field engineer on a live video call walks out of the office, drives up the
+# mountain road, and arrives at a remote site. Along the way the device sees
+# every technology in the challenge statement: wired dock, Wi-Fi roaming between
+# access points, 5G, LEO and GEO satellite.
+#
+# The route is 1-D: "s" = metres travelled along the route. Access points and
+# cells sit at a route position plus a sideways offset, so distance (and so
+# signal) changes naturally with speed AND direction of travel.
+
+name: rak_office_to_site
+duration_s: 200
+
+# (time_s, position_m) waypoints; position is linearly interpolated.
+# Speed = slope. Going back to a smaller s = walking in the other direction.
+waypoints:
+  - [0,    0]      # docked at the desk
+  - [20,   0]      # undock, start walking (1.4 m/s)
+  - [40,   28]
+  - [45,   21]     # walks BACK a few metres (forgot the badge)
+  - [62,   56]     # leaves the building
+  - [72,   70]     # gets into the car
+  - [100,  490]    # city streets ~50 km/h
+  - [160,  2157]   # mountain road ~100 km/h
+  - [175,  2300]   # slows down, arrives at the site
+  - [185,  2310]   # parks, walks towards the site cabin
+  - [200,  2325]
+
+# Which links exist in this scenario (names must exist in config/links.yaml)
+links: [wired, wifi, cellular_5g, sat_leo, sat_geo]
+
+wired:
+  docked: [[0, 20]]          # time intervals (s) when the laptop is docked
+
+wifi:
+  access_points:             # [route position m, sideways offset m]
+    - [5, 6]                 # office AP-1
+    - [30, 8]                # office AP-2
+    - [55, 10]               # lobby AP-3
+    - [2320, 5]              # site cabin AP
+
+cellular_5g:
+  cells:                     # gNBs: [route position m, sideways offset m]
+    - [150, 180]
+    - [900, 250]
+    - [2350, 300]
+  shadow_zones:              # terrain/building attenuation: [s_from, s_to, dB]
+    - [0, 60, 15]            # indoors
+    - [1300, 1900, 32]       # mountain pass: 5G dead zone
+
+sat_leo:
+  obstructions:              # [s_from, s_to] -> no line of sight to the sky
+    - [0, 62]                # indoors
+    - [1520, 1600]           # canyon section
+    - [2312, 2400]           # inside the site cabin
+
+sat_geo:
+  obstructions:
+    - [0, 62]
+    - [1480, 1640]           # GEO sits low on the horizon -> longer blockage
+    - [2312, 2400]
+
+# Traffic the user is running during the whole trip
+apps: [voip, video]
+
+# Captions for the demo page (demo/build_demo.py). Times match the waypoints.
+# Zone entries, Wi-Fi roams and satellite outages are added automatically.
+narration:
+  - [0,   "Docked at the desk, on a voice call and a live video stream"]
+  - [20,  "Unplugs the laptop and walks off; the cable link is gone"]
+  - [40,  "Turns back a few metres to pick up a badge"]
+  - [45,  "Walks out through the lobby"]
+  - [62,  "Steps outside the building; the sky is now visible"]
+  - [72,  "Gets in the car and drives through the city at about 50 km/h"]
+  - [100, "Takes the mountain road at about 100 km/h"]
+  - [160, "Slows down near the remote site"]
+  - [175, "Arrives at the site and parks"]
+  - [185, "Walks into the site cabin"]
+
+# Route sections for the demo page: [from_m, to_m, name]
+phases:
+  - [0, 62, "Office"]
+  - [62, 490, "City"]
+  - [490, 2300, "Mountain road"]
+  - [2300, 2325, "Site"]

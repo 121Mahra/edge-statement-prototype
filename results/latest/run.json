@@ -1,0 +1,13 @@
+{
+  "scenario": "rak_office_to_site",
+  "strategies": [
+    "bbm",
+    "threshold",
+    "redundant",
+    "predictive_linear",
+    "predictive"
+  ],
+  "seeds": 20,
+  "out": "results/latest",
+  "workers": null
+}
